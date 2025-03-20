@@ -5,11 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Markdown to PDF</title>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked@4.3.0/marked.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
@@ -95,10 +93,9 @@
             font-size: 14px;
             color: #666;
         }
-        #temp-pdf-container {
+        #print-container {
             background: white;
-            width: 170mm; /* Narrower to prevent stretching */
-            padding: 15mm;
+            width: 100%;
             margin: 0 auto;
             display: none;
             font-family: Arial, sans-serif;
@@ -116,6 +113,42 @@
             font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
             font-size: 85%;
         }
+        
+        /* Print-specific styles */
+        @media print {
+            body * {
+                visibility: hidden;
+            }
+            #print-container, #print-container * {
+                visibility: visible;
+            }
+            #print-container {
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 100%;
+                display: block;
+                padding: 0;
+                margin: 0;
+            }
+            .app-only {
+                display: none !important;
+            }
+            @page {
+                size: A4;
+                margin: 15mm;
+            }
+            /* Force page breaks */
+            .page-break {
+                page-break-after: always;
+                border: none;
+                display: block;
+                height: 0;
+            }
+            .page-break::after {
+                display: none;
+            }
+        }
     </style>
 </head>
 <body>
@@ -124,13 +157,14 @@
         
         <div class="button-container">
             <button @click="formatMarkdown">Format Markdown</button>
-            <button @click="exportToPDF">Export to PDF</button>
+            <button @click="exportToPDF">Print to PDF</button>
             <!-- TODO: Add page breaks back in after fixing the logic-->
             <!-- <button 
                 @click="togglePageBreaks" 
                 :class="{ active: showPageBreaks, secondary: true }">
                 {{ showPageBreaks ? 'Hide Page Breaks' : 'Show Page Breaks' }}
             </button> -->
+            <button @click="insertPageBreak" class="secondary">Insert Page Break</button>
         </div>
         
         <div class="editor-container">
@@ -149,7 +183,7 @@
     </div>
 
     <!-- Temporary container for PDF export -->
-    <div id="temp-pdf-container"></div>
+    <div id="print-container"></div>
 
     <script>
         const { createApp, ref, computed, onMounted } = Vue;
@@ -180,6 +214,43 @@
                             return hljs.highlightAuto(code).value;
                         }
                     });
+
+                    // Add custom renderer for handling page breaks
+                    const renderer = new marked.Renderer();
+                    const originalParagraph = renderer.paragraph;
+                    
+                    // Override paragraph renderer to handle page break HTML tags in markdown
+                    renderer.paragraph = function(text) {
+                        if (typeof text === 'string' && text.includes('<div class="page-break"></div>')) {
+                            return '<div class="page-break"></div>';
+                        }
+                        return originalParagraph.call(this, text);
+                    };
+                    
+                    // Handle HTML comments for page breaks
+                    const walkTokens = (token) => {
+                        if (token.type === 'html' && token.text === '<!-- PAGE_BREAK -->') {
+                            token.type = 'html';
+                            token.text = '<div class="page-break"></div>';
+                        }
+                    };
+                    
+                    // Try to use the newer API if available, otherwise fall back to the older one
+                    try {
+                        marked.use({ walkTokens, renderer });
+                    } catch (e) {
+                        console.warn('Using fallback for older marked.js version');
+                        marked.setOptions({ renderer });
+                        
+                        // Also extend the renderer to handle HTML directly
+                        const originalHtml = renderer.html || function(html) { return html; };
+                        renderer.html = function(html) {
+                            if (html === '<!-- PAGE_BREAK -->') {
+                                return '<div class="page-break"></div>';
+                            }
+                            return originalHtml.call(this, html);
+                        };
+                    }
                 };
                 
                 const updatePreview = () => {
@@ -271,96 +342,29 @@
                 };
                 
                 const exportToPDF = () => {
-                    const tempContainer = document.getElementById('temp-pdf-container');
+                    const printContainer = document.getElementById('print-container');
                     
-                    // Fill the temporary container with content
-                    tempContainer.innerHTML = htmlOutput.value;
+                    // Fill the print container with content
+                    printContainer.innerHTML = htmlOutput.value;
                     
-                    // Make it visible temporarily
-                    tempContainer.style.display = 'block';
+                    // Use browser print functionality
+                    window.print();
+                };
+                
+                const insertPageBreak = () => {
+                    // Get current cursor position
+                    const textarea = document.querySelector('.editor');
+                    const cursorPos = textarea.selectionStart;
                     
-                    // Use jsPDF
-                    const { jsPDF } = window.jspdf;
-                    const pdf = new jsPDF('p', 'mm', 'a4');
+                    // Insert page break markdown at cursor position
+                    const textBefore = markdownText.value.substring(0, cursorPos);
+                    const textAfter = markdownText.value.substring(cursorPos);
                     
-                    // Page dimensions in mm
-                    const pageWidth = pdf.internal.pageSize.getWidth();
-                    const pageHeight = pdf.internal.pageSize.getHeight();
+                    // Use an HTML comment for page breaks which is more reliable with Marked.js
+                    markdownText.value = textBefore + '\n\n<!-- PAGE_BREAK -->\n\n' + textAfter;
                     
-                    // Maximum content width in mm (with margins)
-                    const contentWidth = pageWidth - 20; // 10mm margins on each side
-                    
-                    // Function to divide content into pages
-                    const generatePDF = async () => {
-                        try {
-                            // First, capture the entire content
-                            const fullCanvas = await html2canvas(tempContainer, {
-                                scale: 2,
-                                useCORS: true,
-                                backgroundColor: 'white',
-                                width: tempContainer.offsetWidth
-                            });
-                            
-                            // Calculate the aspect ratio
-                            const aspectRatio = fullCanvas.height / fullCanvas.width;
-                            
-                            // Calculate content width and height in mm while maintaining aspect ratio
-                            const pdfContentWidth = contentWidth;
-                            const pdfContentHeight = pdfContentWidth * aspectRatio;
-                            
-                            // Split into pages
-                            const totalHeight = fullCanvas.height;
-                            const pageHeightInPx = (pageHeight - 20) / pdfContentHeight * fullCanvas.height;
-                            const numPages = Math.ceil(totalHeight / pageHeightInPx);
-                            
-                            // Add each page to the PDF
-                            for (let i = 0; i < numPages; i++) {
-                                if (i > 0) {
-                                    pdf.addPage();
-                                }
-                                
-                                // Calculate the slice of canvas for this page
-                                const sliceY = i * pageHeightInPx;
-                                const sliceHeight = Math.min(pageHeightInPx, totalHeight - sliceY);
-                                
-                                // Create a temporary canvas for the slice
-                                const tempCanvas = document.createElement('canvas');
-                                tempCanvas.width = fullCanvas.width;
-                                tempCanvas.height = sliceHeight;
-                                const ctx = tempCanvas.getContext('2d');
-                                ctx.drawImage(
-                                    fullCanvas, 
-                                    0, sliceY, fullCanvas.width, sliceHeight, 
-                                    0, 0, fullCanvas.width, sliceHeight
-                                );
-                                
-                                // Add the image to the PDF
-                                const imgData = tempCanvas.toDataURL('image/png', 1.0);
-                                
-                                // Add image preserving aspect ratio
-                                const pageSliceAspectRatio = sliceHeight / fullCanvas.width;
-                                const imageHeight = pdfContentWidth * pageSliceAspectRatio;
-                                
-                                pdf.addImage(
-                                    imgData, 
-                                    'PNG', 
-                                    10, 10, 
-                                    pdfContentWidth, 
-                                    imageHeight
-                                );
-                            }
-                            
-                            // Save the PDF
-                            pdf.save('document.pdf');
-                        } catch (error) {
-                            console.error('Error generating PDF:', error);
-                        } finally {
-                            // Hide the temporary container
-                            tempContainer.style.display = 'none';
-                        }
-                    };
-                    
-                    generatePDF();
+                    // Update preview
+                    updatePreview();
                 };
                 
                 onMounted(() => {
@@ -376,7 +380,8 @@
                     exportToPDF,
                     showPageBreaks,
                     togglePageBreaks,
-                    previewWithBreaks
+                    previewWithBreaks,
+                    insertPageBreak
                 };
             }
         }).mount('#app');
