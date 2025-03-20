@@ -7,7 +7,7 @@ A simple web application that allows you to write markdown and convert it to PDF
 - Markdown editor with live preview
 - Syntax highlighting using Highlight.js
 - Format markdown button for better readability
-- Export to PDF functionality with multi-page support
+- Print to PDF using the browser's native functionality
 - Minimal and clean UI
 
 ## Usage
@@ -16,14 +16,14 @@ A simple web application that allows you to write markdown and convert it to PDF
 2. Write or paste your markdown in the left panel
 3. See the live HTML preview in the right panel
 4. Use the "Format Markdown" button to improve the formatting of your markdown
-5. Click "Export to PDF" to download a PDF version of your document
+5. Click "Print to PDF" to open your browser's print dialog, where you can save as PDF
 
 ## Technologies Used
 
 - Vue.js 3 - Frontend framework
 - Marked - Markdown to HTML conversion
 - Highlight.js - Syntax highlighting
-- jsPDF and html2canvas - HTML to PDF conversion with multi-page support
+- Browser's native print API - For generating PDFs
 
 ## Development
 
