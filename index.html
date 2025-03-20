@@ -40,9 +40,33 @@
         }
         .preview {
             background-color: white;
+            position: relative;
+        }
+        /* Page break visualization */
+        .page-break {
+            display: none;
+            border-bottom: 2px dashed #999;
+            margin: 10px 0;
+            position: relative;
+        }
+        .page-break::after {
+            content: 'Page Break';
+            position: absolute;
+            right: 0;
+            top: -10px;
+            font-size: 10px;
+            background: #f0f0f0;
+            padding: 0 5px;
+            color: #666;
+            border-radius: 3px;
+        }
+        .show-breaks .page-break {
+            display: block;
         }
         .button-container {
             margin-bottom: 20px;
+            display: flex;
+            flex-wrap: wrap;
         }
         button {
             background-color: #4CAF50;
@@ -54,8 +78,16 @@
             display: inline-block;
             font-size: 14px;
             margin-right: 10px;
+            margin-bottom: 5px;
             cursor: pointer;
             border-radius: 4px;
+        }
+        button.active {
+            background-color: #388E3C;
+            box-shadow: inset 0 0 5px rgba(0,0,0,0.2);
+        }
+        button.secondary {
+            background-color: #607D8B;
         }
         footer {
             margin-top: 30px;
@@ -65,10 +97,12 @@
         }
         #temp-pdf-container {
             background: white;
-            width: 210mm;
-            padding: 20mm;
+            width: 170mm; /* Narrower to prevent stretching */
+            padding: 15mm;
             margin: 0 auto;
             display: none;
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
         }
         pre {
             white-space: pre-wrap;
@@ -91,6 +125,12 @@
         <div class="button-container">
             <button @click="formatMarkdown">Format Markdown</button>
             <button @click="exportToPDF">Export to PDF</button>
+            <!-- TODO: Add page breaks back in after fixing the logic-->
+            <!-- <button 
+                @click="togglePageBreaks" 
+                :class="{ active: showPageBreaks, secondary: true }">
+                {{ showPageBreaks ? 'Hide Page Breaks' : 'Show Page Breaks' }}
+            </button> -->
         </div>
         
         <div class="editor-container">
@@ -99,7 +139,7 @@
                 v-model="markdownText" 
                 @input="updatePreview" 
                 placeholder="Write your markdown here..."></textarea>
-            <div class="preview" v-html="htmlOutput"></div>
+            <div class="preview" :class="{ 'show-breaks': showPageBreaks }" v-html="previewWithBreaks"></div>
         </div>
         
         <footer>
@@ -112,12 +152,18 @@
     <div id="temp-pdf-container"></div>
 
     <script>
-        const { createApp, ref, onMounted } = Vue;
+        const { createApp, ref, computed, onMounted } = Vue;
         
         createApp({
             setup() {
                 const markdownText = ref(`# Hello World\n\nThis is a **markdown** editor.\n\n## Features\n\n- Live preview\n- Syntax highlighting\n- Export to PDF\n\n\`\`\`javascript\nconsole.log('Hello World');\n\`\`\``);
                 const htmlOutput = ref('');
+                const showPageBreaks = ref(false);
+                
+                // A4 page height in pixels at 96 DPI (approximately)
+                const A4_HEIGHT_PX = 1123; // 297mm at 96 DPI
+                const PAGE_PADDING_PX = 150; // Approximate padding for A4 page
+                const AVAILABLE_HEIGHT_PX = A4_HEIGHT_PX - PAGE_PADDING_PX;
                 
                 // Configure marked with highlight.js for syntax highlighting
                 const configureMarked = () => {
@@ -138,6 +184,58 @@
                 
                 const updatePreview = () => {
                     htmlOutput.value = marked.parse(markdownText.value);
+                };
+                
+                // Calculate where page breaks would occur and insert page break indicators
+                const previewWithBreaks = computed(() => {
+                    if (!htmlOutput.value) return '';
+                    
+                    // Simple approach - insert page breaks after large sections like headers, paragraphs
+                    const tempDiv = document.createElement('div');
+                    tempDiv.innerHTML = htmlOutput.value;
+                    
+                    // Function to insert page breaks based on estimated content height
+                    let insertPageBreaks = () => {
+                        // We estimate breaks based on content elements
+                        // In a real implementation, we'd measure actual element heights
+                        let elements = tempDiv.querySelectorAll('h1, h2, h3, h4, h5, h6, p, pre, ul, ol, blockquote, table');
+                        let currentHeight = 0;
+                        
+                        for (let i = 0; i < elements.length; i++) {
+                            let element = elements[i];
+                            // Estimate element height - this is a rough approximation
+                            // In a real app, we would measure actual rendered height
+                            let estimatedHeight = element.textContent.length / 5; // Very rough estimate
+                            
+                            // Add more height for certain elements
+                            if (element.tagName === 'PRE') {
+                                estimatedHeight *= 1.5; // Code blocks take more space
+                            }
+                            if (element.tagName.match(/^H[1-6]$/)) {
+                                estimatedHeight *= 2; // Headers have larger font
+                            }
+                            if (element.tagName === 'UL' || element.tagName === 'OL') {
+                                estimatedHeight *= 1.2; // Lists have bullets/numbers
+                            }
+                            
+                            currentHeight += estimatedHeight;
+                            
+                            // If we've exceeded the page height, insert a page break before this element
+                            if (currentHeight > AVAILABLE_HEIGHT_PX && i > 0) {
+                                const breakDiv = document.createElement('div');
+                                breakDiv.className = 'page-break';
+                                element.parentNode.insertBefore(breakDiv, element);
+                                currentHeight = estimatedHeight; // Reset height counter
+                            }
+                        }
+                    };
+                    
+                    insertPageBreaks();
+                    return tempDiv.innerHTML;
+                });
+                
+                const togglePageBreaks = () => {
+                    showPageBreaks.value = !showPageBreaks.value;
                 };
                 
                 const formatMarkdown = () => {
@@ -164,38 +262,93 @@
                     const tempContainer = document.getElementById('temp-pdf-container');
                     
                     // Fill the temporary container with content
-                    tempContainer.innerHTML = `<div style="font-family: Arial, sans-serif; line-height: 1.6;">${htmlOutput.value}</div>`;
+                    tempContainer.innerHTML = htmlOutput.value;
                     
                     // Make it visible temporarily
                     tempContainer.style.display = 'block';
                     
-                    // Use jsPDF and html2canvas directly
+                    // Use jsPDF
                     const { jsPDF } = window.jspdf;
+                    const pdf = new jsPDF('p', 'mm', 'a4');
                     
-                    setTimeout(() => {
-                        html2canvas(tempContainer, {
-                            scale: 2,
-                            logging: true,
-                            useCORS: true,
-                            backgroundColor: '#ffffff'
-                        }).then(canvas => {
-                            const imgData = canvas.toDataURL('image/jpeg', 1.0);
-                            const pdf = new jsPDF('p', 'mm', 'a4');
-                            const pdfWidth = pdf.internal.pageSize.getWidth();
-                            const pdfHeight = pdf.internal.pageSize.getHeight();
-                            const imgWidth = canvas.width;
-                            const imgHeight = canvas.height;
-                            const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight);
-                            const imgX = (pdfWidth - imgWidth * ratio) / 2;
-                            const imgY = 0;
+                    // Page dimensions in mm
+                    const pageWidth = pdf.internal.pageSize.getWidth();
+                    const pageHeight = pdf.internal.pageSize.getHeight();
+                    
+                    // Maximum content width in mm (with margins)
+                    const contentWidth = pageWidth - 20; // 10mm margins on each side
+                    
+                    // Function to divide content into pages
+                    const generatePDF = async () => {
+                        try {
+                            // First, capture the entire content
+                            const fullCanvas = await html2canvas(tempContainer, {
+                                scale: 2,
+                                useCORS: true,
+                                backgroundColor: 'white',
+                                width: tempContainer.offsetWidth
+                            });
                             
-                            pdf.addImage(imgData, 'JPEG', imgX, imgY, imgWidth * ratio, imgHeight * ratio);
+                            // Calculate the aspect ratio
+                            const aspectRatio = fullCanvas.height / fullCanvas.width;
+                            
+                            // Calculate content width and height in mm while maintaining aspect ratio
+                            const pdfContentWidth = contentWidth;
+                            const pdfContentHeight = pdfContentWidth * aspectRatio;
+                            
+                            // Split into pages
+                            const totalHeight = fullCanvas.height;
+                            const pageHeightInPx = (pageHeight - 20) / pdfContentHeight * fullCanvas.height;
+                            const numPages = Math.ceil(totalHeight / pageHeightInPx);
+                            
+                            // Add each page to the PDF
+                            for (let i = 0; i < numPages; i++) {
+                                if (i > 0) {
+                                    pdf.addPage();
+                                }
+                                
+                                // Calculate the slice of canvas for this page
+                                const sliceY = i * pageHeightInPx;
+                                const sliceHeight = Math.min(pageHeightInPx, totalHeight - sliceY);
+                                
+                                // Create a temporary canvas for the slice
+                                const tempCanvas = document.createElement('canvas');
+                                tempCanvas.width = fullCanvas.width;
+                                tempCanvas.height = sliceHeight;
+                                const ctx = tempCanvas.getContext('2d');
+                                ctx.drawImage(
+                                    fullCanvas, 
+                                    0, sliceY, fullCanvas.width, sliceHeight, 
+                                    0, 0, fullCanvas.width, sliceHeight
+                                );
+                                
+                                // Add the image to the PDF
+                                const imgData = tempCanvas.toDataURL('image/png', 1.0);
+                                
+                                // Add image preserving aspect ratio
+                                const pageSliceAspectRatio = sliceHeight / fullCanvas.width;
+                                const imageHeight = pdfContentWidth * pageSliceAspectRatio;
+                                
+                                pdf.addImage(
+                                    imgData, 
+                                    'PNG', 
+                                    10, 10, 
+                                    pdfContentWidth, 
+                                    imageHeight
+                                );
+                            }
+                            
+                            // Save the PDF
                             pdf.save('document.pdf');
-                            
-                            // Hide the temporary container again
+                        } catch (error) {
+                            console.error('Error generating PDF:', error);
+                        } finally {
+                            // Hide the temporary container
                             tempContainer.style.display = 'none';
-                        });
-                    }, 500); // Longer timeout to ensure rendering
+                        }
+                    };
+                    
+                    generatePDF();
                 };
                 
                 onMounted(() => {
@@ -208,7 +361,10 @@
                     htmlOutput,
                     updatePreview,
                     formatMarkdown,
-                    exportToPDF
+                    exportToPDF,
+                    showPageBreaks,
+                    togglePageBreaks,
+                    previewWithBreaks
                 };
             }
         }).mount('#app');

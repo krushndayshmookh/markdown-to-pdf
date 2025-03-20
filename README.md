@@ -35,4 +35,4 @@ Created by [Krushn Dayshmookh](https://github.com/krushndayshmookh)
 
 ## License
 
-MIT 
+MIT
