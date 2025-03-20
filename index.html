@@ -8,7 +8,8 @@
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
@@ -62,8 +63,24 @@
             font-size: 14px;
             color: #666;
         }
-        #pdf-export {
+        #temp-pdf-container {
+            background: white;
+            width: 210mm;
+            padding: 20mm;
+            margin: 0 auto;
             display: none;
+        }
+        pre {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            background-color: #f6f8fa;
+            padding: 16px;
+            border-radius: 6px;
+            overflow-x: auto;
+        }
+        code {
+            font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+            font-size: 85%;
         }
     </style>
 </head>
@@ -85,15 +102,14 @@
             <div class="preview" v-html="htmlOutput"></div>
         </div>
         
-        <div id="pdf-export" ref="pdfExport">
-            <div v-html="htmlOutput"></div>
-        </div>
-        
         <footer>
             Created by <a href="https://github.com/krushndayshmookh" target="_blank">Krushn Dayshmookh</a> | 
             <a href="https://github.com/krushndayshmookh/markdown-to-pdf" target="_blank">GitHub</a>
         </footer>
     </div>
+
+    <!-- Temporary container for PDF export -->
+    <div id="temp-pdf-container"></div>
 
     <script>
         const { createApp, ref, onMounted } = Vue;
@@ -102,7 +118,6 @@
             setup() {
                 const markdownText = ref(`# Hello World\n\nThis is a **markdown** editor.\n\n## Features\n\n- Live preview\n- Syntax highlighting\n- Export to PDF\n\n\`\`\`javascript\nconsole.log('Hello World');\n\`\`\``);
                 const htmlOutput = ref('');
-                const pdfExport = ref(null);
                 
                 // Configure marked with highlight.js for syntax highlighting
                 const configureMarked = () => {
@@ -146,16 +161,41 @@
                 };
                 
                 const exportToPDF = () => {
-                    const element = pdfExport.value;
-                    const opt = {
-                        margin: 10,
-                        filename: 'document.pdf',
-                        image: { type: 'jpeg', quality: 0.98 },
-                        html2canvas: { scale: 2 },
-                        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-                    };
+                    const tempContainer = document.getElementById('temp-pdf-container');
                     
-                    html2pdf().set(opt).from(element).save();
+                    // Fill the temporary container with content
+                    tempContainer.innerHTML = `<div style="font-family: Arial, sans-serif; line-height: 1.6;">${htmlOutput.value}</div>`;
+                    
+                    // Make it visible temporarily
+                    tempContainer.style.display = 'block';
+                    
+                    // Use jsPDF and html2canvas directly
+                    const { jsPDF } = window.jspdf;
+                    
+                    setTimeout(() => {
+                        html2canvas(tempContainer, {
+                            scale: 2,
+                            logging: true,
+                            useCORS: true,
+                            backgroundColor: '#ffffff'
+                        }).then(canvas => {
+                            const imgData = canvas.toDataURL('image/jpeg', 1.0);
+                            const pdf = new jsPDF('p', 'mm', 'a4');
+                            const pdfWidth = pdf.internal.pageSize.getWidth();
+                            const pdfHeight = pdf.internal.pageSize.getHeight();
+                            const imgWidth = canvas.width;
+                            const imgHeight = canvas.height;
+                            const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight);
+                            const imgX = (pdfWidth - imgWidth * ratio) / 2;
+                            const imgY = 0;
+                            
+                            pdf.addImage(imgData, 'JPEG', imgX, imgY, imgWidth * ratio, imgHeight * ratio);
+                            pdf.save('document.pdf');
+                            
+                            // Hide the temporary container again
+                            tempContainer.style.display = 'none';
+                        });
+                    }, 500); // Longer timeout to ensure rendering
                 };
                 
                 onMounted(() => {
@@ -168,8 +208,7 @@
                     htmlOutput,
                     updatePreview,
                     formatMarkdown,
-                    exportToPDF,
-                    pdfExport
+                    exportToPDF
                 };
             }
         }).mount('#app');
