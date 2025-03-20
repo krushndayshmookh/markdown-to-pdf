@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Markdown to PDF</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/shiki"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            color: #333;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .editor-container {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .editor, .preview {
+            flex: 1;
+            height: 70vh;
+            border: 1px solid #ddd;
+            padding: 15px;
+            overflow: auto;
+        }
+        .editor {
+            font-family: 'Courier New', Courier, monospace;
+            resize: none;
+        }
+        .preview {
+            background-color: white;
+        }
+        .button-container {
+            margin-bottom: 20px;
+        }
+        button {
+            background-color: #4CAF50;
+            border: none;
+            color: white;
+            padding: 8px 16px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 14px;
+            margin-right: 10px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        footer {
+            margin-top: 30px;
+            text-align: center;
+            font-size: 14px;
+            color: #666;
+        }
+        #pdf-export {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="app" class="container">
+        <h1>Markdown to PDF Converter</h1>
+        
+        <div class="button-container">
+            <button @click="formatMarkdown">Format Markdown</button>
+            <button @click="exportToPDF">Export to PDF</button>
+        </div>
+        
+        <div class="editor-container">
+            <textarea 
+                class="editor" 
+                v-model="markdownText" 
+                @input="updatePreview" 
+                placeholder="Write your markdown here..."></textarea>
+            <div class="preview" v-html="htmlOutput"></div>
+        </div>
+        
+        <div id="pdf-export" ref="pdfExport">
+            <div v-html="htmlOutput"></div>
+        </div>
+        
+        <footer>
+            Created by <a href="https://github.com/krushndayshmookh" target="_blank">Krushn Dayshmookh</a> | 
+            <a href="https://github.com/krushndayshmookh" target="_blank">GitHub</a>
+        </footer>
+    </div>
+
+    <script>
+        // Initialize shiki
+        let highlighter;
+        shiki.getHighlighter({
+            theme: 'github-light'
+        }).then(h => {
+            highlighter = h;
+        });
+
+        const { createApp, ref, onMounted } = Vue;
+        
+        createApp({
+            setup() {
+                const markdownText = ref(`# Hello World\n\nThis is a **markdown** editor.\n\n## Features\n\n- Live preview\n- Syntax highlighting\n- Export to PDF\n\n\`\`\`javascript\nconsole.log('Hello World');\n\`\`\``);
+                const htmlOutput = ref('');
+                const pdfExport = ref(null);
+                
+                // Configure marked with shiki for syntax highlighting
+                const configureMarked = () => {
+                    marked.setOptions({
+                        highlight: (code, lang) => {
+                            if (highlighter) {
+                                try {
+                                    return highlighter.codeToHtml(code, { lang });
+                                } catch (e) {
+                                    return code;
+                                }
+                            }
+                            return code;
+                        }
+                    });
+                };
+                
+                const updatePreview = () => {
+                    htmlOutput.value = marked.parse(markdownText.value);
+                };
+                
+                const formatMarkdown = () => {
+                    // Basic markdown formatting - we could add more sophisticated formatting here
+                    let formatted = markdownText.value;
+                    
+                    // Add space after # for headers if missing
+                    formatted = formatted.replace(/^(#{1,6})([^#\s])/gm, '$1 $2');
+                    
+                    // Ensure lists have space after bullet
+                    formatted = formatted.replace(/^([*\-+])([^\s])/gm, '$1 $2');
+                    
+                    // Add blank line before headers
+                    formatted = formatted.replace(/^(?!$)(^|^\n)(?!#)(.*\n)(#{1,6}\s)/gm, '$1$2\n$3');
+                    
+                    // Double newlines between sections
+                    formatted = formatted.replace(/^(#{1,6}.*)\n(?!$|#|\n)/gm, '$1\n\n');
+                    
+                    markdownText.value = formatted;
+                    updatePreview();
+                };
+                
+                const exportToPDF = () => {
+                    const element = pdfExport.value;
+                    const opt = {
+                        margin: 10,
+                        filename: 'document.pdf',
+                        image: { type: 'jpeg', quality: 0.98 },
+                        html2canvas: { scale: 2 },
+                        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+                    };
+                    
+                    html2pdf().set(opt).from(element).save();
+                };
+                
+                onMounted(() => {
+                    configureMarked();
+                    updatePreview();
+                });
+                
+                return {
+                    markdownText,
+                    htmlOutput,
+                    updatePreview,
+                    formatMarkdown,
+                    exportToPDF,
+                    pdfExport
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html> 
