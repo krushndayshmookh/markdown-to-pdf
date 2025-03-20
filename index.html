@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Markdown to PDF</title>
-    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked@4.3.0/marked.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
@@ -39,27 +39,6 @@
         .preview {
             background-color: white;
             position: relative;
-        }
-        /* Page break visualization */
-        .page-break {
-            display: none;
-            border-bottom: 2px dashed #999;
-            margin: 10px 0;
-            position: relative;
-        }
-        .page-break::after {
-            content: 'Page Break';
-            position: absolute;
-            right: 0;
-            top: -10px;
-            font-size: 10px;
-            background: #f0f0f0;
-            padding: 0 5px;
-            color: #666;
-            border-radius: 3px;
-        }
-        .show-breaks .page-break {
-            display: block;
         }
         .button-container {
             margin-bottom: 20px;
@@ -138,16 +117,6 @@
                 size: A4;
                 margin: 15mm;
             }
-            /* Force page breaks */
-            .page-break {
-                page-break-after: always;
-                border: none;
-                display: block;
-                height: 0;
-            }
-            .page-break::after {
-                display: none;
-            }
         }
     </style>
 </head>
@@ -158,13 +127,6 @@
         <div class="button-container">
             <button @click="formatMarkdown">Format Markdown</button>
             <button @click="exportToPDF">Print to PDF</button>
-            <!-- TODO: Add page breaks back in after fixing the logic-->
-            <!-- <button 
-                @click="togglePageBreaks" 
-                :class="{ active: showPageBreaks, secondary: true }">
-                {{ showPageBreaks ? 'Hide Page Breaks' : 'Show Page Breaks' }}
-            </button> -->
-            <button @click="insertPageBreak" class="secondary">Insert Page Break</button>
         </div>
         
         <div class="editor-container">
@@ -173,7 +135,7 @@
                 v-model="markdownText" 
                 @input="updatePreview" 
                 placeholder="Write your markdown here..."></textarea>
-            <div class="preview" :class="{ 'show-breaks': showPageBreaks }" v-html="previewWithBreaks"></div>
+            <div class="preview" v-html="htmlOutput"></div>
         </div>
         
         <footer>
@@ -186,18 +148,12 @@
     <div id="print-container"></div>
 
     <script>
-        const { createApp, ref, computed, onMounted } = Vue;
+        const { createApp, ref, onMounted } = Vue;
         
         createApp({
             setup() {
                 const markdownText = ref(`# Hello World\n\nThis is a **markdown** editor.\n\n## Features\n\n- Live preview\n- Syntax highlighting\n- Export to PDF\n\n\`\`\`javascript\nconsole.log('Hello World');\n\`\`\``);
                 const htmlOutput = ref('');
-                const showPageBreaks = ref(false);
-                
-                // A4 page height in pixels at 96 DPI (approximately)
-                const A4_HEIGHT_PX = 1123; // 297mm at 96 DPI
-                const PAGE_PADDING_PX = 150; // Approximate padding for A4 page
-                const AVAILABLE_HEIGHT_PX = A4_HEIGHT_PX - PAGE_PADDING_PX;
                 
                 // Configure marked with highlight.js for syntax highlighting
                 const configureMarked = () => {
@@ -214,99 +170,10 @@
                             return hljs.highlightAuto(code).value;
                         }
                     });
-
-                    // Add custom renderer for handling page breaks
-                    const renderer = new marked.Renderer();
-                    const originalParagraph = renderer.paragraph;
-                    
-                    // Override paragraph renderer to handle page break HTML tags in markdown
-                    renderer.paragraph = function(text) {
-                        if (typeof text === 'string' && text.includes('<div class="page-break"></div>')) {
-                            return '<div class="page-break"></div>';
-                        }
-                        return originalParagraph.call(this, text);
-                    };
-                    
-                    // Handle HTML comments for page breaks
-                    const walkTokens = (token) => {
-                        if (token.type === 'html' && token.text === '<!-- PAGE_BREAK -->') {
-                            token.type = 'html';
-                            token.text = '<div class="page-break"></div>';
-                        }
-                    };
-                    
-                    // Try to use the newer API if available, otherwise fall back to the older one
-                    try {
-                        marked.use({ walkTokens, renderer });
-                    } catch (e) {
-                        console.warn('Using fallback for older marked.js version');
-                        marked.setOptions({ renderer });
-                        
-                        // Also extend the renderer to handle HTML directly
-                        const originalHtml = renderer.html || function(html) { return html; };
-                        renderer.html = function(html) {
-                            if (html === '<!-- PAGE_BREAK -->') {
-                                return '<div class="page-break"></div>';
-                            }
-                            return originalHtml.call(this, html);
-                        };
-                    }
                 };
                 
                 const updatePreview = () => {
                     htmlOutput.value = marked.parse(markdownText.value);
-                };
-                
-                // Calculate where page breaks would occur and insert page break indicators
-                const previewWithBreaks = computed(() => {
-                    if (!htmlOutput.value) return '';
-                    
-                    // Simple approach - insert page breaks after large sections like headers, paragraphs
-                    const tempDiv = document.createElement('div');
-                    tempDiv.innerHTML = htmlOutput.value;
-                    
-                    // Function to insert page breaks based on estimated content height
-                    let insertPageBreaks = () => {
-                        // We estimate breaks based on content elements
-                        // In a real implementation, we'd measure actual element heights
-                        let elements = tempDiv.querySelectorAll('h1, h2, h3, h4, h5, h6, p, pre, ul, ol, blockquote, table');
-                        let currentHeight = 0;
-                        
-                        for (let i = 0; i < elements.length; i++) {
-                            let element = elements[i];
-                            // Estimate element height - this is a rough approximation
-                            // In a real app, we would measure actual rendered height
-                            let estimatedHeight = element.textContent.length / 5; // Very rough estimate
-                            
-                            // Add more height for certain elements
-                            if (element.tagName === 'PRE') {
-                                estimatedHeight *= 1.5; // Code blocks take more space
-                            }
-                            if (element.tagName.match(/^H[1-6]$/)) {
-                                estimatedHeight *= 2; // Headers have larger font
-                            }
-                            if (element.tagName === 'UL' || element.tagName === 'OL') {
-                                estimatedHeight *= 1.2; // Lists have bullets/numbers
-                            }
-                            
-                            currentHeight += estimatedHeight;
-                            
-                            // If we've exceeded the page height, insert a page break before this element
-                            if (currentHeight > AVAILABLE_HEIGHT_PX && i > 0) {
-                                const breakDiv = document.createElement('div');
-                                breakDiv.className = 'page-break';
-                                element.parentNode.insertBefore(breakDiv, element);
-                                currentHeight = estimatedHeight; // Reset height counter
-                            }
-                        }
-                    };
-                    
-                    insertPageBreaks();
-                    return tempDiv.innerHTML;
-                });
-                
-                const togglePageBreaks = () => {
-                    showPageBreaks.value = !showPageBreaks.value;
                 };
                 
                 const formatMarkdown = () => {
@@ -351,22 +218,6 @@
                     window.print();
                 };
                 
-                const insertPageBreak = () => {
-                    // Get current cursor position
-                    const textarea = document.querySelector('.editor');
-                    const cursorPos = textarea.selectionStart;
-                    
-                    // Insert page break markdown at cursor position
-                    const textBefore = markdownText.value.substring(0, cursorPos);
-                    const textAfter = markdownText.value.substring(cursorPos);
-                    
-                    // Use an HTML comment for page breaks which is more reliable with Marked.js
-                    markdownText.value = textBefore + '\n\n<!-- PAGE_BREAK -->\n\n' + textAfter;
-                    
-                    // Update preview
-                    updatePreview();
-                };
-                
                 onMounted(() => {
                     configureMarked();
                     updatePreview();
@@ -377,11 +228,7 @@
                     htmlOutput,
                     updatePreview,
                     formatMarkdown,
-                    exportToPDF,
-                    showPageBreaks,
-                    togglePageBreaks,
-                    previewWithBreaks,
-                    insertPageBreak
+                    exportToPDF
                 };
             }
         }).mount('#app');
