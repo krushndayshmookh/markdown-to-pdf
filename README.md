@@ -5,9 +5,9 @@ A simple web application that allows you to write markdown and convert it to PDF
 ## Features
 
 - Markdown editor with live preview
-- Syntax highlighting using Shiki
+- Syntax highlighting using Highlight.js
 - Format markdown button for better readability
-- Export to PDF functionality
+- Export to PDF functionality with multi-page support
 - Minimal and clean UI
 
 ## Usage
@@ -22,8 +22,8 @@ A simple web application that allows you to write markdown and convert it to PDF
 
 - Vue.js 3 - Frontend framework
 - Marked - Markdown to HTML conversion
-- Shiki - Syntax highlighting
-- html2pdf.js - HTML to PDF conversion
+- Highlight.js - Syntax highlighting
+- jsPDF and html2canvas - HTML to PDF conversion with multi-page support
 
 ## Development
 
@@ -31,7 +31,7 @@ This is a standalone HTML application with no build steps required. Just edit th
 
 ## Author
 
-Created by [Krushn Dayshmookh](https://github.com/krushndayshmookh)
+Created by [Krushn Dayshmookh](https://github.com/krushndayshmookh). Fully AI Generated using claude-3.7-sonnet-thinking on Cursor.
 
 ## License
 
