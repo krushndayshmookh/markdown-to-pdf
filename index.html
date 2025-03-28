@@ -6,6 +6,7 @@
     <title>Markdown to PDF</title>
     <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked@4.3.0/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10.8.0/dist/mermaid.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
     <style>
@@ -152,13 +153,16 @@
         
         createApp({
             setup() {
-                const markdownText = ref(`# Hello World\n\nThis is a **markdown** editor.\n\n## Features\n\n- Live preview\n- Syntax highlighting\n- Export to PDF\n\n\`\`\`javascript\nconsole.log('Hello World');\n\`\`\``);
+                const markdownText = ref(`# Hello World\n\nThis is a **markdown** editor.\n\n## Features\n\n- Live preview\n- Syntax highlighting\n- Export to PDF\n- Mermaid diagrams\n\n\`\`\`javascript\nconsole.log('Hello World');\n\`\`\`\n\n\`\`\`mermaid\ngraph TD\n    A[Start] --> B{Is it working?}\n    B -- Yes --> C[Great!]\n    B -- No --> D[Debug]\n    D --> B\n\`\`\``);
                 const htmlOutput = ref('');
                 
-                // Configure marked with highlight.js for syntax highlighting
+                // Configure marked with highlight.js and mermaid for syntax highlighting
                 const configureMarked = () => {
                     marked.setOptions({
                         highlight: (code, lang) => {
+                            if (lang === 'mermaid') {
+                                return `<div class="mermaid">${code}</div>`;
+                            }
                             if (lang && hljs.getLanguage(lang)) {
                                 try {
                                     return hljs.highlight(code, { language: lang }).value;
@@ -171,9 +175,32 @@
                         }
                     });
                 };
+
+                const renderMermaid = () => {
+                    return new Promise((resolve) => {
+                        // Clear any existing diagrams first
+                        const mermaidDivs = document.querySelectorAll('.mermaid');
+                        mermaidDivs.forEach((element) => {
+                            element.innerHTML = element.textContent;
+                        });
+                        
+                        // Re-render all diagrams
+                        mermaid.run({
+                            nodes: mermaidDivs,
+                            suppressErrors: false
+                        }).then(() => {
+                            resolve();
+                        });
+                    });
+                };
                 
-                const updatePreview = () => {
+                const updatePreview = async () => {
+                    // First parse the markdown
                     htmlOutput.value = marked.parse(markdownText.value);
+                    
+                    // Use nextTick to ensure the DOM is updated before rendering Mermaid
+                    await Vue.nextTick();
+                    await renderMermaid();
                 };
                 
                 const formatMarkdown = () => {
@@ -208,19 +235,43 @@
                     console.log("Formatting complete");
                 };
                 
-                const exportToPDF = () => {
+                const exportToPDF = async () => {
                     const printContainer = document.getElementById('print-container');
                     
                     // Fill the print container with content
                     printContainer.innerHTML = htmlOutput.value;
                     
+                    // Wait for Mermaid diagrams to render in the print container
+                    await Vue.nextTick();
+                    await renderMermaid();
+                    
                     // Use browser print functionality
                     window.print();
                 };
                 
-                onMounted(() => {
+                onMounted(async () => {
                     configureMarked();
-                    updatePreview();
+                    // Initialize mermaid with more comprehensive configuration
+                    mermaid.initialize({
+                        startOnLoad: true,
+                        theme: 'default',
+                        securityLevel: 'loose',
+                        flowchart: {
+                            htmlLabels: true,
+                            curve: 'basis'
+                        },
+                        sequence: {
+                            showSequenceNumbers: true
+                        },
+                        gantt: {
+                            titleTopMargin: 25,
+                            barHeight: 20,
+                            barGap: 4,
+                            topPadding: 50,
+                            sidePadding: 75
+                        }
+                    });
+                    await updatePreview();
                 });
                 
                 return {
